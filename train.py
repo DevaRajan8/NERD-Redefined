@@ -12,6 +12,7 @@ from typing import List, Dict, Tuple, Any
 import os
 from tqdm import tqdm
 import argparse
+import pickle
 
 class CycleNERDataset(Dataset):
     def __init__(self, sentences: List[str], entity_sequences: List[str], tokenizer, max_length=512):
@@ -201,6 +202,11 @@ class CycleNER:
         self.s2e_optimizer = optim.Adam(self.s2e_model.parameters(), lr=5e-5)
         self.e2s_optimizer = optim.Adam(self.e2s_model.parameters(), lr=5e-5)
         
+        # Training state
+        self.current_epoch = 0
+        self.best_val_loss = float('inf')
+        self.training_history = []
+        
     def encode_batch(self, texts: List[str], max_length: int = 512):
         """Encode batch of texts"""
         encoded = self.tokenizer(
@@ -216,41 +222,71 @@ class CycleNER:
         """Decode batch of token IDs"""
         return self.tokenizer.batch_decode(token_ids, skip_special_tokens=True)
     
-    def s2e_forward(self, sentences: List[str]) -> List[str]:
-        """Sentence-to-Entity forward pass"""
-        # Add task prefix for T5
-        prefixed_sentences = [f"extract entities: {sent}" for sent in sentences]
+    def s2e_forward(self, sentences: List[str], batch_size: int = 8) -> List[str]:
+        """Sentence-to-Entity forward pass with batching"""
+        if not sentences:
+            return []
+            
+        all_predictions = []
         
-        inputs = self.encode_batch(prefixed_sentences)
+        # Process in batches to avoid OOM
+        for i in range(0, len(sentences), batch_size):
+            batch_sentences = sentences[i:i+batch_size]
+            
+            # Add task prefix for T5
+            prefixed_sentences = [f"extract entities: {sent}" for sent in batch_sentences]
+            
+            inputs = self.encode_batch(prefixed_sentences)
+            
+            with torch.no_grad():
+                outputs = self.s2e_model.generate(
+                    **inputs,
+                    max_length=256,
+                    num_beams=2,
+                    temperature=1.0,
+                    do_sample=False
+                )
+            
+            batch_predictions = self.decode_batch(outputs)
+            all_predictions.extend(batch_predictions)
+            
+            # Clear GPU cache after each batch
+            torch.cuda.empty_cache()
         
-        with torch.no_grad():
-            outputs = self.s2e_model.generate(
-                **inputs,
-                max_length=256,
-                num_beams=2,
-                temperature=1.0,
-                do_sample=False
-            )
-        
-        return self.decode_batch(outputs)
+        return all_predictions
     
-    def e2s_forward(self, entity_sequences: List[str]) -> List[str]:
-        """Entity-to-Sentence forward pass"""
-        # Add task prefix for T5
-        prefixed_sequences = [f"generate sentence: {seq}" for seq in entity_sequences]
+    def e2s_forward(self, entity_sequences: List[str], batch_size: int = 8) -> List[str]:
+        """Entity-to-Sentence forward pass with batching"""
+        if not entity_sequences:
+            return []
+            
+        all_predictions = []
         
-        inputs = self.encode_batch(prefixed_sequences)
+        # Process in batches to avoid OOM
+        for i in range(0, len(entity_sequences), batch_size):
+            batch_sequences = entity_sequences[i:i+batch_size]
+            
+            # Add task prefix for T5
+            prefixed_sequences = [f"generate sentence: {seq}" for seq in batch_sequences]
+            
+            inputs = self.encode_batch(prefixed_sequences)
+            
+            with torch.no_grad():
+                outputs = self.e2s_model.generate(
+                    **inputs,
+                    max_length=512,
+                    num_beams=2,
+                    temperature=1.0,
+                    do_sample=False
+                )
+            
+            batch_predictions = self.decode_batch(outputs)
+            all_predictions.extend(batch_predictions)
+            
+            # Clear GPU cache after each batch
+            torch.cuda.empty_cache()
         
-        with torch.no_grad():
-            outputs = self.e2s_model.generate(
-                **inputs,
-                max_length=512,
-                num_beams=2,
-                temperature=1.0,
-                do_sample=False
-            )
-        
-        return self.decode_batch(outputs)
+        return all_predictions
     
     def train_s2e(self, sentences: List[str], target_sequences: List[str]):
         """Train S2E model"""
@@ -297,21 +333,36 @@ class CycleNER:
     def cycle_training_step(self, sentences: List[str], entity_sequences: List[str]):
         """Perform one cycle training step"""
         
+        # Use smaller inference batch size for memory efficiency
+        inference_batch_size = 4
+        
         # S-cycle: S -> S2E -> E2S -> S'
-        synthetic_entity_seqs = self.s2e_forward(sentences)  # S2E(S) -> Q'
+        synthetic_entity_seqs = self.s2e_forward(sentences, batch_size=inference_batch_size)  # S2E(S) -> Q'
         s_cycle_loss = self.train_e2s(synthetic_entity_seqs, sentences)  # Train E2S with (Q', S)
         
         # E-cycle: Q -> E2S -> S2E -> Q'
-        synthetic_sentences = self.e2s_forward(entity_sequences)  # E2S(Q) -> S'
+        synthetic_sentences = self.e2s_forward(entity_sequences, batch_size=inference_batch_size)  # E2S(Q) -> S'
         e_cycle_loss = self.train_s2e(synthetic_sentences, entity_sequences)  # Train S2E with (S', Q)
         
         return s_cycle_loss, e_cycle_loss
     
-    def evaluate_ner(self, test_sentences: List[str], true_entity_sequences: List[str]) -> Dict:
-        """Evaluate NER performance"""
+    def evaluate_ner(self, test_sentences: List[str], true_entity_sequences: List[str], eval_batch_size: int = 16) -> Dict:
+        """Evaluate NER performance with batching to avoid OOM"""
         self.s2e_model.eval()
         
-        predicted_sequences = self.s2e_forward(test_sentences)
+        predicted_sequences = []
+        
+        print(f"Evaluating on {len(test_sentences)} samples in batches of {eval_batch_size}...")
+        
+        # Process in smaller batches to avoid OOM
+        for i in tqdm(range(0, len(test_sentences), eval_batch_size), desc="Validation"):
+            batch_sentences = test_sentences[i:i+eval_batch_size]
+            
+            # Clear cache before each batch
+            torch.cuda.empty_cache()
+            
+            batch_predictions = self.s2e_forward(batch_sentences)
+            predicted_sequences.extend(batch_predictions)
         
         # Simple evaluation - you might want to implement more sophisticated metrics
         exact_matches = sum(1 for pred, true in zip(predicted_sequences, true_entity_sequences) 
@@ -325,15 +376,102 @@ class CycleNER:
             'total_samples': len(test_sentences)
         }
     
+    def save_checkpoint(self, checkpoint_path: str, epoch: int):
+        """Save complete checkpoint including model states, optimizer states, and training info"""
+        os.makedirs(checkpoint_path, exist_ok=True)
+        
+        checkpoint = {
+            'epoch': epoch,
+            'current_epoch': self.current_epoch,
+            'best_val_loss': self.best_val_loss,
+            'training_history': self.training_history,
+            's2e_model_state': self.s2e_model.state_dict(),
+            'e2s_model_state': self.e2s_model.state_dict(),
+            's2e_optimizer_state': self.s2e_optimizer.state_dict(),
+            'e2s_optimizer_state': self.e2s_optimizer.state_dict(),
+            'tokenizer_vocab_size': len(self.tokenizer)
+        }
+        
+        # Save checkpoint
+        torch.save(checkpoint, os.path.join(checkpoint_path, 'checkpoint.pt'))
+        
+        # Save tokenizer separately (for easy loading)
+        self.tokenizer.save_pretrained(os.path.join(checkpoint_path, "tokenizer"))
+        
+        print(f"Checkpoint saved to {checkpoint_path} at epoch {epoch}")
+    
+    def load_checkpoint(self, checkpoint_path: str, model_name: str = "t5-small"):
+        """Load checkpoint and resume training"""
+        checkpoint_file = os.path.join(checkpoint_path, 'checkpoint.pt')
+        tokenizer_path = os.path.join(checkpoint_path, "tokenizer")
+        
+        if not os.path.exists(checkpoint_file):
+            raise FileNotFoundError(f"No checkpoint found at {checkpoint_file}")
+        
+        print(f"Loading checkpoint from {checkpoint_path}")
+        
+        # Load tokenizer
+        if os.path.exists(tokenizer_path):
+            self.tokenizer = T5Tokenizer.from_pretrained(tokenizer_path)
+        else:
+            print("Warning: Tokenizer not found in checkpoint, using default")
+            self.tokenizer = T5Tokenizer.from_pretrained(model_name)
+            special_tokens = {"additional_special_tokens": ["<sep>"]}
+            self.tokenizer.add_special_tokens(special_tokens)
+        
+        # Load checkpoint
+        checkpoint = torch.load(checkpoint_file, map_location=self.device)
+        
+        # Restore training state
+        self.current_epoch = checkpoint.get('current_epoch', 0)
+        self.best_val_loss = checkpoint.get('best_val_loss', float('inf'))
+        self.training_history = checkpoint.get('training_history', [])
+        
+        # Initialize models with correct vocab size
+        self.s2e_model = T5ForConditionalGeneration.from_pretrained(model_name).to(self.device)
+        self.e2s_model = T5ForConditionalGeneration.from_pretrained(model_name).to(self.device)
+        self.s2e_model.resize_token_embeddings(len(self.tokenizer))
+        self.e2s_model.resize_token_embeddings(len(self.tokenizer))
+        
+        # Load model states
+        self.s2e_model.load_state_dict(checkpoint['s2e_model_state'])
+        self.e2s_model.load_state_dict(checkpoint['e2s_model_state'])
+        
+        # Initialize optimizers
+        self.s2e_optimizer = optim.Adam(self.s2e_model.parameters(), lr=5e-5)
+        self.e2s_optimizer = optim.Adam(self.e2s_model.parameters(), lr=5e-5)
+        
+        # Load optimizer states
+        self.s2e_optimizer.load_state_dict(checkpoint['s2e_optimizer_state'])
+        self.e2s_optimizer.load_state_dict(checkpoint['e2s_optimizer_state'])
+        
+        start_epoch = checkpoint.get('epoch', 0) + 1
+        print(f"Checkpoint loaded. Resuming from epoch {start_epoch}")
+        return start_epoch
+    
     def train(self, train_sentences: List[str], train_entity_sequences: List[str],
               val_sentences: List[str] = None, val_entity_sequences: List[str] = None,
-              epochs: int = 10, batch_size: int = 8):
-        """Train CycleNER model"""
+              epochs: int = 10, batch_size: int = 8, checkpoint_path: str = None, 
+              save_every: int = 5, resume_from_checkpoint: str = None):
+        """Train CycleNER model with checkpoint support"""
         
-        best_val_loss = float('inf')
-        training_history = []
+        start_epoch = 0
         
-        for epoch in range(epochs):
+        # Resume from checkpoint if specified
+        if resume_from_checkpoint:
+            try:
+                start_epoch = self.load_checkpoint(resume_from_checkpoint)
+                print(f"Resumed training from epoch {start_epoch}")
+            except Exception as e:
+                print(f"Failed to load checkpoint: {e}")
+                print("Starting fresh training...")
+                start_epoch = 0
+        
+        # Create checkpoint directory if specified
+        if checkpoint_path:
+            os.makedirs(checkpoint_path, exist_ok=True)
+        
+        for epoch in range(start_epoch, epochs):
             epoch_s_losses = []
             epoch_e_losses = []
             
@@ -367,28 +505,45 @@ class CycleNER:
             avg_s_loss = np.mean(epoch_s_losses)
             avg_e_loss = np.mean(epoch_e_losses)
             
+            # Update training state
+            self.current_epoch = epoch
+            
             # Validation
             val_metrics = {}
             if val_sentences and val_entity_sequences:
                 val_metrics = self.evaluate_ner(val_sentences, val_entity_sequences)
                 
                 # Use E-cycle loss as stopping criterion (as per paper)
-                if avg_e_loss < best_val_loss:
-                    best_val_loss = avg_e_loss
-                    self.save_models(f"best_cyclener_epoch_{epoch}")
+                if avg_e_loss < self.best_val_loss:
+                    self.best_val_loss = avg_e_loss
+                    if checkpoint_path:
+                        self.save_models(os.path.join(checkpoint_path, f"best_model_epoch_{epoch}"))
             
-            training_history.append({
+            # Save training history
+            epoch_info = {
                 'epoch': epoch + 1,
                 'avg_s_loss': avg_s_loss,
                 'avg_e_loss': avg_e_loss,
                 **val_metrics
-            })
+            }
+            self.training_history.append(epoch_info)
             
             print(f"Epoch {epoch+1}: S-Loss={avg_s_loss:.4f}, E-Loss={avg_e_loss:.4f}")
             if val_metrics:
                 print(f"Validation Accuracy: {val_metrics.get('accuracy', 0):.4f}")
             
-        return training_history
+            # Save checkpoint periodically
+            if checkpoint_path and (epoch + 1) % save_every == 0:
+                self.save_checkpoint(
+                    os.path.join(checkpoint_path, f"checkpoint_epoch_{epoch+1}"), 
+                    epoch
+                )
+        
+        # Save final checkpoint
+        if checkpoint_path:
+            self.save_checkpoint(os.path.join(checkpoint_path, "final_checkpoint"), epochs - 1)
+            
+        return self.training_history
     
     def save_models(self, save_path: str):
         """Save both S2E and E2S models"""
@@ -416,13 +571,18 @@ class CycleNER:
 
 def main():
     parser = argparse.ArgumentParser(description='Train CycleNER on Materials Science Data')
-    parser.add_argument('--data_path', type=str, default="/kaggle/input/ner-train/solution-synthesis_dataset_2021-8-5.json", help='Path to JSON data file')
+    parser.add_argument('--data_path', type=str, default="solution-synthesis_dataset_2021-8-5.json", help='Path to JSON data file')
     parser.add_argument('--epochs', type=int, default=10, help='Number of training epochs')
     parser.add_argument('--batch_size', type=int, default=8, help='Batch size')
     parser.add_argument('--model_name', type=str, default='t5-small', help='T5 model variant')
     parser.add_argument('--save_path', type=str, default='./cyclener_models', help='Model save path')
     parser.add_argument('--use_synthetic', action='store_true', help='Use synthetic entity sequences')
     parser.add_argument('--synthetic_count', type=int, default=1000, help='Number of synthetic sequences')
+    
+    # Checkpoint arguments
+    parser.add_argument('--checkpoint_path', type=str, default='./checkpoints', help='Checkpoint save path')
+    parser.add_argument('--resume_from_checkpoint', type=str, default=None, help='Path to checkpoint to resume from')
+    parser.add_argument('--save_every', type=int, default=5, help='Save checkpoint every N epochs')
     
     args = parser.parse_args()
     
@@ -462,7 +622,7 @@ def main():
     print(f"Training data: {len(train_sentences)} sentences, {len(train_entity_sequences)} entity sequences")
     print(f"Validation data: {len(val_sentences)} sentences, {len(val_entity_sequences)} entity sequences")
     
-    # Initialize and train model
+    # Initialize model
     print("Initializing CycleNER...")
     cyclener = CycleNER(model_name=args.model_name)
     
@@ -473,7 +633,10 @@ def main():
         val_sentences=val_sentences,
         val_entity_sequences=val_entity_sequences,
         epochs=args.epochs,
-        batch_size=args.batch_size
+        batch_size=args.batch_size,
+        checkpoint_path=args.checkpoint_path,
+        save_every=args.save_every,
+        resume_from_checkpoint=args.resume_from_checkpoint
     )
     
     # Save final models
