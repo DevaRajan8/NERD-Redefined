@@ -12,6 +12,7 @@ from typing import List, Dict, Tuple, Any
 import os
 from tqdm import tqdm
 import argparse
+#old code
 
 class CycleNERDataset(Dataset):
     def __init__(self, sentences: List[str], entity_sequences: List[str], tokenizer, max_length=512):
