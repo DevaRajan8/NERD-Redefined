@@ -256,7 +256,9 @@ class CycleNER:
                     max_length=256,
                     num_beams=2,
                     temperature=1.0,
-                    do_sample=False
+                    do_sample=False,
+                    pad_token_id=self.tokenizer.pad_token_id,
+                    eos_token_id=self.tokenizer.eos_token_id
                 )
             
             batch_predictions = self.decode_batch(outputs)
@@ -286,10 +288,12 @@ class CycleNER:
             with torch.no_grad():
                 outputs = self.e2s_model.generate(
                     **inputs,
-                    max_length=512,
+                    max_length=256,
                     num_beams=2,
                     temperature=1.0,
-                    do_sample=False
+                    do_sample=False,
+                    pad_token_id=self.tokenizer.pad_token_id,
+                    eos_token_id=self.tokenizer.eos_token_id
                 )
             
             batch_predictions = self.decode_batch(outputs)
