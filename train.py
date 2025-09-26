@@ -184,16 +184,18 @@ class CycleNER:
             device = "cuda" if torch.cuda.is_available() else "cpu"
         print(f"Using device: {device}")
         self.device = device
-        self.tokenizer = T5Tokenizer.from_pretrained(model_name)
+        self.tokenizer = RobertaTokenizer.from_pretrained(model_name)
         
         # Add special tokens
         special_tokens = {"additional_special_tokens": ["<sep>"]}
         self.tokenizer.add_special_tokens(special_tokens)
         
         # Initialize S2E and E2S models
-        self.s2e_model = T5ForConditionalGeneration.from_pretrained(model_name).to(device)
-        self.e2s_model = T5ForConditionalGeneration.from_pretrained(model_name).to(device)
-        
+        self.s2e_model = EncoderDecoderModel.from_encoder_decoder_pretrained(
+        model_name, model_name).to(device)
+        self.e2s_model = EncoderDecoderModel.from_encoder_decoder_pretrained(
+        model_name, model_name).to(device)
+
         # Resize embeddings for new tokens
         self.s2e_model.resize_token_embeddings(len(self.tokenizer))
         self.e2s_model.resize_token_embeddings(len(self.tokenizer))
