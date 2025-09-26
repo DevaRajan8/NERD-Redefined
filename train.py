@@ -186,6 +186,9 @@ class CycleNER:
         self.device = device
         self.tokenizer = RobertaTokenizer.from_pretrained(model_name)
         
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+        
         # Add special tokens
         special_tokens = {"additional_special_tokens": ["<sep>"],
                           "pad_token": "<pad>"
@@ -209,8 +212,15 @@ class CycleNER:
         self.e2s_model.config.pad_token_id = self.tokenizer.pad_token_id
 
         # Resize embeddings for new tokens
-        self.s2e_model.resize_token_embeddings(len(self.tokenizer))
-        self.e2s_model.resize_token_embeddings(len(self.tokenizer))
+        self.s2e_model.encoder.resize_token_embeddings(len(self.tokenizer))
+        self.s2e_model.decoder.resize_token_embeddings(len(self.tokenizer))
+        self.e2s_model.encoder.resize_token_embeddings(len(self.tokenizer))
+        self.e2s_model.decoder.resize_token_embeddings(len(self.tokenizer))
+
+        for model in [self.s2e_model, self.e2s_model]:
+            model.config.pad_token_id = self.tokenizer.pad_token_id
+            model.config.eos_token_id = self.tokenizer.eos_token_id
+            model.config.decoder_start_token_id = self.tokenizer.bos_token_id
         
         # Optimizers
         self.s2e_optimizer = optim.Adam(self.s2e_model.parameters(), lr=5e-5)
