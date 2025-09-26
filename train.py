@@ -187,7 +187,9 @@ class CycleNER:
         self.tokenizer = RobertaTokenizer.from_pretrained(model_name)
         
         # Add special tokens
-        special_tokens = {"additional_special_tokens": ["<sep>"]}
+        special_tokens = {"additional_special_tokens": ["<sep>"],
+                          "pad_token": "<pad>"
+                          }
         self.tokenizer.add_special_tokens(special_tokens)
         
         # Initialize S2E and E2S models
