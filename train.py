@@ -195,6 +195,16 @@ class CycleNER:
         model_name, model_name).to(device)
         self.e2s_model = EncoderDecoderModel.from_encoder_decoder_pretrained(
         model_name, model_name).to(device)
+        
+        # Configure the encoder-decoder models
+        self.s2e_model.config.decoder_start_token_id = self.tokenizer.bos_token_id
+        self.s2e_model.config.eos_token_id = self.tokenizer.eos_token_id
+        self.s2e_model.config.pad_token_id = self.tokenizer.pad_token_id
+
+        # Same for e2s_model
+        self.e2s_model.config.decoder_start_token_id = self.tokenizer.bos_token_id
+        self.e2s_model.config.eos_token_id = self.tokenizer.eos_token_id
+        self.e2s_model.config.pad_token_id = self.tokenizer.pad_token_id
 
         # Resize embeddings for new tokens
         self.s2e_model.resize_token_embeddings(len(self.tokenizer))
