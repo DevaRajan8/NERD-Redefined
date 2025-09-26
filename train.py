@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
-from transformers import T5ForConditionalGeneration, T5Tokenizer
+from transformers import RobertaTokenizer, EncoderDecoderModel
 import numpy as np
 from sklearn.metrics import f1_score, precision_score, recall_score
 import re
@@ -14,7 +14,6 @@ from tqdm import tqdm
 import argparse
 import pickle
 
-#old code
 class CycleNERDataset(Dataset):
     def __init__(self, sentences: List[str], entity_sequences: List[str], tokenizer, max_length=512):
         self.sentences = sentences
