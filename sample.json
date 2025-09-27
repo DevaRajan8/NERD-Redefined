@@ -1,0 +1,358 @@
+[
+  {
+    "doi": "10.1016/j.test.2024.001",
+    "paragraph_string": "ZnO nanowires were synthesized using a hydrothermal method. First, 2.5 g of zinc nitrate hexahydrate was dissolved in 50 mL of deionized water at room temperature. Then, 1.2 g of sodium hydroxide was added dropwise while stirring continuously for 30 minutes. The solution was transferred to a Teflon-lined autoclave and heated at 150°C for 6 hours. After cooling, the white precipitate was collected by filtration and washed with ethanol three times, then dried at 80°C overnight.",
+    "reaction": {
+      "left_side": ["Zn(NO3)2·6H2O", "NaOH"],
+      "right_side": ["ZnO"]
+    },
+    "reaction_string": "Zn(NO3)2·6H2O + NaOH -> ZnO",
+    "target": {
+      "material_string": "ZnO",
+      "material_name": "zinc oxide",
+      "material_formula": "ZnO",
+      "phase": "",
+      "additives": [],
+      "oxygen_deficiency": null,
+      "is_acronym": false,
+      "amounts_vars": {},
+      "elements_vars": {},
+      "composition": [
+        {
+          "formula": "ZnO",
+          "amount": "1",
+          "elements": {
+            "Zn": "1",
+            "O": "1"
+          },
+          "species": {
+            "Zn": "1",
+            "O": "1"
+          }
+        }
+      ],
+      "mp_id": "mp-2133"
+    },
+    "targets_string": "ZnO",
+    "precursors": [
+      {
+        "material_string": "Zn(NO3)2·6H2O",
+        "material_name": "zinc nitrate hexahydrate",
+        "material_formula": "Zn(NO3)2·6H2O",
+        "phase": "",
+        "additives": [],
+        "oxygen_deficiency": null,
+        "is_acronym": false,
+        "amounts_vars": {},
+        "elements_vars": {},
+        "composition": [
+          {
+            "formula": "Zn(NO3)2·6H2O",
+            "amount": "1",
+            "elements": {
+              "Zn": "1",
+              "N": "2",
+              "O": "12",
+              "H": "12"
+            },
+            "species": {
+              "Zn": "1",
+              "NO3": "2",
+              "H2O": "6"
+            }
+          }
+        ],
+        "mp_id": null
+      },
+      {
+        "material_string": "NaOH",
+        "material_name": "sodium hydroxide",
+        "material_formula": "NaOH",
+        "phase": "",
+        "additives": [],
+        "oxygen_deficiency": null,
+        "is_acronym": false,
+        "amounts_vars": {},
+        "elements_vars": {},
+        "composition": [
+          {
+            "formula": "NaOH",
+            "amount": "1",
+            "elements": {
+              "Na": "1",
+              "O": "1",
+              "H": "1"
+            },
+            "species": {
+              "Na": "1",
+              "OH": "1"
+            }
+          }
+        ],
+        "mp_id": "mp-18905"
+      }
+    ],
+    "solvents_string": ["water", "ethanol"],
+    "operations": [
+      {
+        "type": "MixingOperation",
+        "conditions": {
+          "temperature": {
+            "values": [25.0],
+            "units": "°C",
+            "min_value": 25.0,
+            "max_value": 25.0
+          },
+          "time": {
+            "values": [30.0],
+            "units": "min",
+            "min_value": 30.0,
+            "max_value": 30.0
+          },
+          "atmosphere": null,
+          "mixing_device": null,
+          "mixing_media": ["water"]
+        },
+        "string": "stirring"
+      },
+      {
+        "type": "HeatingOperation",
+        "conditions": {
+          "temperature": {
+            "values": [150.0],
+            "units": "°C",
+            "min_value": 150.0,
+            "max_value": 150.0
+          },
+          "time": {
+            "values": [6.0],
+            "units": "h",
+            "min_value": 6.0,
+            "max_value": 6.0
+          },
+          "atmosphere": null,
+          "mixing_device": null,
+          "mixing_media": null
+        },
+        "string": "heated"
+      },
+      {
+        "type": "PurificationOperation",
+        "conditions": {
+          "temperature": null,
+          "time": null,
+          "atmosphere": null,
+          "mixing_device": null,
+          "mixing_media": ["ethanol"]
+        },
+        "string": "washed"
+      },
+      {
+        "type": "DryingOperation",
+        "conditions": {
+          "temperature": {
+            "values": [80.0],
+            "units": "°C",
+            "min_value": 80.0,
+            "max_value": 80.0
+          },
+          "time": {
+            "values": [12.0],
+            "units": "h",
+            "min_value": 12.0,
+            "max_value": 12.0
+          },
+          "atmosphere": null,
+          "mixing_device": null,
+          "mixing_media": null
+        },
+        "string": "dried"
+      }
+    ],
+    "quantities": [
+      {
+        "material": "Zn(NO3)2·6H2O",
+        "quantity": [
+          {
+            "number": 2.5,
+            "unit": "g"
+          }
+        ]
+      },
+      {
+        "material": "NaOH",
+        "quantity": [
+          {
+            "number": 1.2,
+            "unit": "g"
+          }
+        ]
+      },
+      {
+        "material": "water",
+        "quantity": [
+          {
+            "number": 50.0,
+            "unit": "mL"
+          }
+        ]
+      }
+    ],
+    "type": "hydrothermal"
+  },
+  {
+    "doi": "10.1021/test.2024.002",
+    "paragraph_string": "Silver nanoparticles were prepared by chemical reduction method. AgNO3 solution (0.01 M) was prepared by dissolving silver nitrate in 100 mL distilled water. Sodium borohydride (0.1 M) was used as reducing agent and added slowly to the silver solution while maintaining the temperature at 0°C for 2 hours. The resulting colloidal solution was centrifuged at 5000 rpm and the silver nanoparticles were collected.",
+    "reaction": {
+      "left_side": ["AgNO3", "NaBH4"],
+      "right_side": ["Ag"]
+    },
+    "reaction_string": "AgNO3 + NaBH4 -> Ag",
+    "target": {
+      "material_string": "Ag",
+      "material_name": "silver",
+      "material_formula": "Ag",
+      "phase": "nanoparticles",
+      "additives": [],
+      "oxygen_deficiency": null,
+      "is_acronym": false,
+      "amounts_vars": {},
+      "elements_vars": {},
+      "composition": [
+        {
+          "formula": "Ag",
+          "amount": "1",
+          "elements": {
+            "Ag": "1"
+          },
+          "species": {
+            "Ag": "1"
+          }
+        }
+      ],
+      "mp_id": "mp-124"
+    },
+    "targets_string": "Ag",
+    "precursors": [
+      {
+        "material_string": "AgNO3",
+        "material_name": "silver nitrate",
+        "material_formula": "AgNO3",
+        "phase": "",
+        "additives": [],
+        "oxygen_deficiency": null,
+        "is_acronym": false,
+        "amounts_vars": {},
+        "elements_vars": {},
+        "composition": [
+          {
+            "formula": "AgNO3",
+            "amount": "1",
+            "elements": {
+              "Ag": "1",
+              "N": "1",
+              "O": "3"
+            },
+            "species": {
+              "Ag": "1",
+              "NO3": "1"
+            }
+          }
+        ],
+        "mp_id": "mp-8887"
+      },
+      {
+        "material_string": "NaBH4",
+        "material_name": "sodium borohydride",
+        "material_formula": "NaBH4",
+        "phase": "",
+        "additives": [],
+        "oxygen_deficiency": null,
+        "is_acronym": false,
+        "amounts_vars": {},
+        "elements_vars": {},
+        "composition": [
+          {
+            "formula": "NaBH4",
+            "amount": "1",
+            "elements": {
+              "Na": "1",
+              "B": "1",
+              "H": "4"
+            },
+            "species": {
+              "Na": "1",
+              "BH4": "1"
+            }
+          }
+        ],
+        "mp_id": "mp-23870"
+      }
+    ],
+    "solvents_string": ["water"],
+    "operations": [
+      {
+        "type": "MixingOperation",
+        "conditions": {
+          "temperature": {
+            "values": [0.0],
+            "units": "°C",
+            "min_value": 0.0,
+            "max_value": 0.0
+          },
+          "time": {
+            "values": [2.0],
+            "units": "h",
+            "min_value": 2.0,
+            "max_value": 2.0
+          },
+          "atmosphere": null,
+          "mixing_device": null,
+          "mixing_media": null
+        },
+        "string": "added"
+      },
+      {
+        "type": "PurificationOperation",
+        "conditions": {
+          "temperature": null,
+          "time": null,
+          "atmosphere": null,
+          "mixing_device": "centrifuge",
+          "mixing_media": null
+        },
+        "string": "centrifuged"
+      }
+    ],
+    "quantities": [
+      {
+        "material": "AgNO3",
+        "quantity": [
+          {
+            "number": 0.01,
+            "unit": "M"
+          }
+        ]
+      },
+      {
+        "material": "NaBH4",
+        "quantity": [
+          {
+            "number": 0.1,
+            "unit": "M"
+          }
+        ]
+      },
+      {
+        "material": "water",
+        "quantity": [
+          {
+            "number": 100.0,
+            "unit": "mL"
+          }
+        ]
+      }
+    ],
+    "type": "reduction"
+  }
+]
