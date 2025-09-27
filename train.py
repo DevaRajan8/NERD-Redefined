@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
-from transformers import AutoTokenizer, EncoderDecoderModel
+from transformers import T5ForConditionalGeneration, T5Tokenizer
 import numpy as np
 from sklearn.metrics import f1_score, precision_score, recall_score
 import re
@@ -179,38 +179,24 @@ class MaterialsDataProcessor:
         return synthetic_sequences
 
 class CycleNER:
-    def __init__(self, model_name="facebook/bart-base", device=None):
+    def __init__(self, model_name="t5-small", device=None):
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
         print(f"Using device: {device}")
         self.device = device
-        
-        # Load tokenizer - use BART tokenizer for BART model
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        
-        # BART tokenizer already has proper BOS/EOS tokens, just ensure pad token
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.tokenizer = T5Tokenizer.from_pretrained(model_name)
         
         # Add special tokens
         special_tokens = {"additional_special_tokens": ["<sep>"]}
         self.tokenizer.add_special_tokens(special_tokens)
         
-        # Load BART models
-        from transformers import BartForConditionalGeneration
-        self.s2e_model = BartForConditionalGeneration.from_pretrained(model_name).to(device)
-        self.e2s_model = BartForConditionalGeneration.from_pretrained(model_name).to(device)
+        # Initialize S2E and E2S models
+        self.s2e_model = T5ForConditionalGeneration.from_pretrained(model_name).to(device)
+        self.e2s_model = T5ForConditionalGeneration.from_pretrained(model_name).to(device)
         
         # Resize embeddings for new tokens
         self.s2e_model.resize_token_embeddings(len(self.tokenizer))
         self.e2s_model.resize_token_embeddings(len(self.tokenizer))
-        
-        # Configure models (BART already has good defaults)
-        for model in [self.s2e_model, self.e2s_model]:
-            model.config.pad_token_id = self.tokenizer.pad_token_id
-            model.config.eos_token_id = self.tokenizer.eos_token_id
-            model.config.bos_token_id = self.tokenizer.bos_token_id
-            model.config.decoder_start_token_id = self.tokenizer.bos_token_id
         
         # Optimizers
         self.s2e_optimizer = optim.Adam(self.s2e_model.parameters(), lr=5e-5)
@@ -250,7 +236,7 @@ class CycleNER:
             # Add task prefix for T5
             prefixed_sentences = [f"extract entities: {sent}" for sent in batch_sentences]
             
-            inputs = self.encode_batch(batch_sentences)
+            inputs = self.encode_batch(prefixed_sentences)
             
             with torch.no_grad():
                 outputs = self.s2e_model.generate(
@@ -258,9 +244,7 @@ class CycleNER:
                     max_length=256,
                     num_beams=2,
                     temperature=1.0,
-                    do_sample=False,
-                    pad_token_id=self.tokenizer.pad_token_id,
-                    eos_token_id=self.tokenizer.eos_token_id
+                    do_sample=False
                 )
             
             batch_predictions = self.decode_batch(outputs)
@@ -285,17 +269,15 @@ class CycleNER:
             # Add task prefix for T5
             prefixed_sequences = [f"generate sentence: {seq}" for seq in batch_sequences]
             
-            inputs = self.encode_batch(batch_sequences)
+            inputs = self.encode_batch(prefixed_sequences)
             
             with torch.no_grad():
                 outputs = self.e2s_model.generate(
                     **inputs,
-                    max_length=256,
+                    max_length=512,
                     num_beams=2,
                     temperature=1.0,
-                    do_sample=False,
-                    pad_token_id=self.tokenizer.pad_token_id,
-                    eos_token_id=self.tokenizer.eos_token_id
+                    do_sample=False
                 )
             
             batch_predictions = self.decode_batch(outputs)
@@ -430,10 +412,10 @@ class CycleNER:
         
         # Load tokenizer
         if os.path.exists(tokenizer_path):
-            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+            self.tokenizer = T5Tokenizer.from_pretrained(tokenizer_path)
         else:
             print("Warning: Tokenizer not found in checkpoint, using default")
-            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+            self.tokenizer = T5Tokenizer.from_pretrained(model_name)
             special_tokens = {"additional_special_tokens": ["<sep>"]}
             self.tokenizer.add_special_tokens(special_tokens)
         
@@ -446,14 +428,10 @@ class CycleNER:
         self.training_history = checkpoint.get('training_history', [])
         
         # Initialize models with correct vocab size
-        self.s2e_model = EncoderDecoderModel.from_encoder_decoder_pretrained(
-        model_name, model_name).to(self.device)
-        self.e2s_model = EncoderDecoderModel.from_encoder_decoder_pretrained(
-            model_name, model_name).to(self.device)
-        self.s2e_model.encoder.resize_token_embeddings(len(self.tokenizer))
-        self.s2e_model.decoder.resize_token_embeddings(len(self.tokenizer))
-        self.e2s_model.encoder.resize_token_embeddings(len(self.tokenizer))
-        self.e2s_model.decoder.resize_token_embeddings(len(self.tokenizer))
+        self.s2e_model = T5ForConditionalGeneration.from_pretrained(model_name).to(self.device)
+        self.e2s_model = T5ForConditionalGeneration.from_pretrained(model_name).to(self.device)
+        self.s2e_model.resize_token_embeddings(len(self.tokenizer))
+        self.e2s_model.resize_token_embeddings(len(self.tokenizer))
         
         # Load model states
         self.s2e_model.load_state_dict(checkpoint['s2e_model_state'])
@@ -579,33 +557,33 @@ class CycleNER:
     
     def load_models(self, load_path: str):
         """Load both S2E and E2S models"""
-        self.s2e_model = EncoderDecoderModel.from_pretrained(
+        self.s2e_model = T5ForConditionalGeneration.from_pretrained(
             os.path.join(load_path, "s2e_model")
         ).to(self.device)
-
-        self.e2s_model = EncoderDecoderModel.from_pretrained(
+        
+        self.e2s_model = T5ForConditionalGeneration.from_pretrained(
             os.path.join(load_path, "e2s_model")
         ).to(self.device)
-
-        self.tokenizer = AutoTokenizer.from_pretrained(os.path.join(load_path, "tokenizer"))
+        
+        self.tokenizer = T5Tokenizer.from_pretrained(os.path.join(load_path, "tokenizer"))
         
         print(f"Models loaded from {load_path}")
 
 def main():
     parser = argparse.ArgumentParser(description='Train CycleNER on Materials Science Data')
-    parser.add_argument('--data_path', type=str, default="./solution-synthesis_dataset_2021-8-5.json", help='Path to JSON data file')
-    parser.add_argument('--epochs', type=int, default=2, help='Number of training epochs')
-    parser.add_argument('--batch_size', type=int, default=32, help='Batch size')
-    parser.add_argument('--model_name', type=str, default='facebook/bart-base', help='BART model')
-    parser.add_argument('--save_path', type=str, default='./bart_models', help='Model save path')
+    parser.add_argument('--data_path', type=str, default="solution-synthesis_dataset_2021-8-5.json", help='Path to JSON data file')
+    parser.add_argument('--epochs', type=int, default=10, help='Number of training epochs')
+    parser.add_argument('--batch_size', type=int, default=8, help='Batch size')
+    parser.add_argument('--model_name', type=str, default='t5-small', help='T5 model variant')
+    parser.add_argument('--save_path', type=str, default='./cyclener_models', help='Model save path')
     parser.add_argument('--use_synthetic', action='store_true', help='Use synthetic entity sequences')
     parser.add_argument('--synthetic_count', type=int, default=1000, help='Number of synthetic sequences')
     
     # Checkpoint arguments
-    parser.add_argument('--checkpoint_path', type=str, default='./bart_checkpoints', help='Checkpoint save path')
+    parser.add_argument('--checkpoint_path', type=str, default='./checkpoints', help='Checkpoint save path')
     parser.add_argument('--resume_from_checkpoint', type=str, default=None, help='Path to checkpoint to resume from')
-    parser.add_argument('--save_every', type=int, default=1, help='Save checkpoint every N epochs')
-
+    parser.add_argument('--save_every', type=int, default=5, help='Save checkpoint every N epochs')
+    
     args = parser.parse_args()
     
     # Load JSON data
@@ -671,12 +649,12 @@ def main():
     print("Training completed!")
     
     # Test on a few examples
-    print("Testing on sample sentences...")
+    print("\nTesting on sample sentences...")
     test_samples = val_sentences[:5]
     predicted_entities = cyclener.s2e_forward(test_samples)
     
     for i, (sent, pred) in enumerate(zip(test_samples, predicted_entities)):
-        print(f"Example {i+1}:")
+        print(f"\nExample {i+1}:")
         print(f"Sentence: {sent[:100]}...")
         print(f"Predicted Entities: {pred}")
 
