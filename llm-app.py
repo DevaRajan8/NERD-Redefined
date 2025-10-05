@@ -15,7 +15,7 @@ import graphviz
 
 st.set_page_config(
     page_title="PDF Entity Extraction System",
-    page_icon="",
+    page_icon="📄",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -53,12 +53,11 @@ class GraphState(TypedDict):
 class PDFEntityExtractor:
     """Extract entities using LangGraph workflow"""
     
-    def __init__(self, api_key: str, model_name: str = "llama-3.3-70b-versatile"):
+    def __init__(self, api_key: str, entity_types: set, model_name: str = "llama-3.3-70b-versatile"):
         self.groq_api_key = api_key
         self.api_url = "https://api.groq.com/openai/v1/chat/completions"
         self.model_name = model_name
-        self.entity_types = {'PRECURSOR', 'TARGET', 'SOLVENT', 'TEMPERATURE', 
-                            'TIME', 'OPERATION', 'QUANTITY', 'MATERIAL', 'CHEMICAL'}
+        self.entity_types = entity_types
     
     def call_groq_api(self, messages: list, max_retries: int = 3) -> str:
         """Call Groq API with retry logic"""
@@ -123,29 +122,25 @@ class PDFEntityExtractor:
         chunks = state['chunks']
         all_entities = []
         
-        system_prompt = """You are an expert materials science entity extraction system. 
+        # Generate entity types list for prompt
+        entity_types_list = "\n".join([f"- {etype}: Description" for etype in sorted(self.entity_types)])
+        
+        system_prompt = f"""You are an expert materials science entity extraction system. 
 Extract entities and return them as a JSON array with this exact format:
 [
-  {"entity": "titanium isopropoxide", "type": "PRECURSOR"},
-  {"entity": "80°C", "type": "TEMPERATURE"}
+  {{"entity": "titanium isopropoxide", "type": "PRECURSOR"}},
+  {{"entity": "80°C", "type": "TEMPERATURE"}}
 ]
 
 Entity Types:
-- PRECURSOR: Starting materials, reactants
-- TARGET: Final products being synthesized
-- SOLVENT: Liquid mediums
-- TEMPERATURE: Temperature values
-- TIME: Duration or time periods
-- OPERATION: Synthesis methods, processes
-- QUANTITY: Amounts with units
-- MATERIAL: General materials, equipment
-- CHEMICAL: Chemical formulas, compounds
+{entity_types_list}
 
 Rules:
 1. Return ONLY valid JSON array
 2. Extract real substances, values, or processes
 3. Be precise and comprehensive
-4. NO explanations or markdown"""
+4. NO explanations or markdown
+5. Only use the entity types listed above"""
 
         progress_bar = st.progress(0)
         status_text = st.empty()
@@ -247,7 +242,6 @@ Rules:
                 if entity_key in sentence_lower:
                     found_entities.append((ent['entity'], ent['type']))
             
-            # Changed from >= 2 to >= 1 to include ALL sentences with entities
             if len(found_entities) >= 1:
                 found_entities = list(dict.fromkeys(found_entities))
                 entity_parts = []
@@ -306,14 +300,15 @@ Rules:
 class MaterialsDataProcessor:
     """Process materials science data"""
     
+    def __init__(self, entity_types: set):
+        self.entity_types = entity_types
+    
     def parse_model_output(self, sequence: str) -> List[Tuple[str, str]]:
         """Parse model output"""
         if not sequence or not sequence.strip():
             return []
         
         entities = []
-        entity_types = {'PRECURSOR', 'TARGET', 'SOLVENT', 'TEMPERATURE', 'TIME', 
-                       'OPERATION', 'QUANTITY', 'MATERIAL', 'CHEMICAL'}
         
         if " <sep> " in sequence or "<sep>" in sequence:
             sequence = sequence.replace("<sep>", " <sep> ")
@@ -323,28 +318,22 @@ class MaterialsDataProcessor:
                 if i + 1 < len(parts):
                     entity = parts[i].strip()
                     entity_type = parts[i + 1].strip().upper()
-                    if entity_type in entity_types and entity:
+                    if entity_type in self.entity_types and entity:
                         entities.append((entity, entity_type))
         
         return list(dict.fromkeys(entities))
     
     def parse_raw_prediction(self, prediction: str) -> List[Tuple[str, str]]:
-        """Parse raw unstructured predictions like 'dried OPERATION water SOLVENT'"""
+        """Parse raw unstructured predictions"""
         if not prediction or not prediction.strip():
             return []
         
         entities = []
-        entity_types = {'PRECURSOR', 'TARGET', 'SOLVENT', 'TEMPERATURE', 'TIME', 
-                       'OPERATION', 'QUANTITY', 'MATERIAL', 'CHEMICAL'}
-        
-        # Split by spaces and look for type keywords
         tokens = prediction.split()
         i = 0
         
         while i < len(tokens):
-            # Check if current token is a type
-            if tokens[i].upper() in entity_types:
-                # Look back to get the entity
+            if tokens[i].upper() in self.entity_types:
                 if i > 0:
                     entity = tokens[i-1]
                     entity_type = tokens[i].upper()
@@ -456,6 +445,17 @@ def main():
         index=0
     )
     
+    st.sidebar.subheader("Entity Types")
+    entity_types_input = st.sidebar.text_area(
+        "Enter entity types (one per line)",
+        value="PRECURSOR\nTARGET\nSOLVENT\nTEMPERATURE\nTIME\nOPERATION\nQUANTITY\nMATERIAL\nCHEMICAL",
+        height=200,
+        help="Add or modify entity types for extraction"
+    )
+    
+    custom_entity_types = set([line.strip().upper() for line in entity_types_input.split('\n') if line.strip()])
+    st.sidebar.info(f"Active entity types: {len(custom_entity_types)}")
+    
     checkpoint_path = st.sidebar.text_input(
         "BART Checkpoint Path",
         value="./bart_checkpoints_2/final_checkpoint/checkpoint.pt"
@@ -476,7 +476,6 @@ def main():
     else:
         st.sidebar.warning("Model: Not loaded")
     
-    # Main tabs
     tab1, tab2, tab3, tab4 = st.tabs(["Extract Entities", "Test Model", "Predictions", "LangGraph Flow"])
     
     with tab1:
@@ -488,7 +487,7 @@ def main():
             if st.button("Extract Entities", type="primary"):
                 with st.spinner("Processing PDF..."):
                     try:
-                        extractor = PDFEntityExtractor(groq_api_key, groq_model)
+                        extractor = PDFEntityExtractor(groq_api_key, custom_entity_types, groq_model)
                         
                         uploaded_file.seek(0)
                         pdf_text = extractor.extract_text_from_pdf(uploaded_file)
@@ -498,7 +497,6 @@ def main():
                         else:
                             st.success(f"Extracted {len(pdf_text):,} characters")
                             
-                            # Run LangGraph workflow
                             graph = extractor.build_graph()
                             initial_state = GraphState(
                                 pdf_text=pdf_text, chunks=[], raw_entities=[],
@@ -575,16 +573,14 @@ def main():
             st.info("Run predictions first")
             return
         
-        processor = MaterialsDataProcessor()
+        processor = MaterialsDataProcessor(custom_entity_types)
         test_sentences = st.session_state['test_sentences']
         predictions = st.session_state['predictions']
         
         st.metric("Total Predictions", len(predictions))
         
-        # Parse predictions to extract entities
         all_predicted_entities = []
         for i, (sentence, prediction) in enumerate(zip(test_sentences, predictions)):
-            # Try to parse structured format first
             pred_entities = processor.parse_model_output(prediction)
             
             if pred_entities:
@@ -594,7 +590,6 @@ def main():
                         'Type': entity_type
                     })
             else:
-                # Parse raw unstructured predictions
                 raw_entities = processor.parse_raw_prediction(prediction)
                 for entity, entity_type in raw_entities:
                     all_predicted_entities.append({
@@ -602,7 +597,6 @@ def main():
                         'Type': entity_type
                     })
         
-        # Remove duplicates
         seen = set()
         unique_entities = []
         for ent in all_predicted_entities:
@@ -616,10 +610,9 @@ def main():
             return
         
         results_df = pd.DataFrame(unique_entities)
-        
-        st.write(f"**Total Unique Entities Predicted: {len(results_df)}**")
-        
-        # Filter options
+
+        st.write(f"**Entities Predicted Successfully !**")
+
         col1, col2 = st.columns(2)
         with col1:
             search_entity = st.text_input("Search Entity")
@@ -635,14 +628,12 @@ def main():
         
         st.dataframe(filtered_df, use_container_width=True, height=500)
         
-        # Download simple Entity, Type CSV
         col1, col2 = st.columns(2)
         with col1:
             csv = filtered_df.to_csv(index=False)
             st.download_button("Download Predictions CSV", csv, "predicted_entities.csv", "text/csv", use_container_width=True)
         
         with col2:
-            # Also offer extracted entities from step 1
             if 'entities' in st.session_state:
                 extracted_df = pd.DataFrame(st.session_state['entities'])[['entity', 'type']]
                 extracted_df.columns = ['Entity', 'Type']
@@ -655,10 +646,35 @@ def main():
                     use_container_width=True
                 )
         
-        # Summary by type
         st.subheader("Summary by Entity Type")
         type_counts = results_df['Type'].value_counts()
         st.bar_chart(type_counts)
+    
+    with tab4:
+        st.subheader("LangGraph Workflow Visualization")
+        
+        st.write("**Entity Extraction Pipeline**")
+        
+        if groq_api_key:
+            extractor = PDFEntityExtractor(groq_api_key, custom_entity_types, groq_model)
+            graph_viz = extractor.visualize_graph()
+            st.graphviz_chart(graph_viz)
+        else:
+            st.warning("Enter Groq API key to view graph")
+        
+        st.write("**Workflow Steps:**")
+        
+        steps = [
+            ("1. Chunk Text", "Split PDF text into processable chunks"),
+            ("2. Extract Entities", "Use Groq API to extract entities from each chunk"),
+            ("3. Validate & Deduplicate", "Filter invalid entities and remove duplicates"),
+            ("4. Create Test Data", "Generate sentence-entity pairs for BART testing")
+        ]
+        
+        for step, description in steps:
+            with st.expander(step):
+                st.write(description)
+
 
 if __name__ == "__main__":
     main()
