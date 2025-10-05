@@ -12,6 +12,8 @@
 
 # Pending
 
+- Do Genai Implementation for this project
+
 - Try to solve the sep token issue in training code itself
 
 - improve the app for these for vis
