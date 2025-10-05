@@ -1,18 +1,17 @@
 # Done
 
-- implemented two models -> Bart and T5  
+- implemented two models -> Bart and T5
 
-- written code for testing the model  
+- written code for testing the model
 
-- Added Readme  
+- Added Readme
 
-- solved the sep token in test file  
+- solved the sep token in test file
 
+- Improved the model performance by increasing the no of epochs
 
 # Pending
 
-- Improve the model performance by increasing the no of epochs  
+- Try to solve the sep token issue in training code itself
 
-- Try to solve the sep token issue in training code itself  
-
-- improve the app for these for vis  
+- improve the app for these for vis

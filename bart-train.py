@@ -1,3 +1,5 @@
+#bart.py
+
 import json
 import torch
 import torch.nn as nn
@@ -237,19 +239,14 @@ class CycleNER:
         return self.tokenizer.batch_decode(token_ids, skip_special_tokens=True)
     
     def s2e_forward(self, sentences: List[str], batch_size: int = 8) -> List[str]:
-        """Sentence-to-Entity forward pass with batching"""
+        """Sentence-to-Entity forward pass with forced <sep> format"""
         if not sentences:
             return []
             
         all_predictions = []
         
-        # Process in batches to avoid OOM
         for i in range(0, len(sentences), batch_size):
             batch_sentences = sentences[i:i+batch_size]
-            
-            # Add task prefix for T5
-            prefixed_sentences = [f"extract entities: {sent}" for sent in batch_sentences]
-            
             inputs = self.encode_batch(batch_sentences)
             
             with torch.no_grad():
@@ -260,16 +257,49 @@ class CycleNER:
                     temperature=1.0,
                     do_sample=False,
                     pad_token_id=self.tokenizer.pad_token_id,
-                    eos_token_id=self.tokenizer.eos_token_id
+                    eos_token_id=self.tokenizer.eos_token_id,
+                    # Force the model to use <sep> token
+                    force_words_ids=[self.tokenizer.encode(" <sep> ", add_special_tokens=False)]
                 )
             
             batch_predictions = self.decode_batch(outputs)
-            all_predictions.extend(batch_predictions)
             
-            # Clear GPU cache after each batch
+            # Post-process to ensure <sep> format
+            processed_predictions = []
+            for pred in batch_predictions:
+                processed_pred = self._enforce_sep_format(pred)
+                processed_predictions.append(processed_pred)
+            
+            all_predictions.extend(processed_predictions)
             torch.cuda.empty_cache()
         
         return all_predictions
+
+    def _enforce_sep_format(self, prediction: str) -> str:
+        """Convert space-separated format to <sep> format"""
+        if " <sep> " in prediction:
+            return prediction  # Already correct format
+        
+        # Parse space-separated format and convert
+        entity_types = {'PRECURSOR', 'TARGET', 'SOLVENT', 'TEMPERATURE', 'TIME', 'OPERATION', 'QUANTITY'}
+        tokens = prediction.split()
+        
+        result_parts = []
+        i = 0
+        
+        while i < len(tokens):
+            # Try different entity lengths
+            for entity_len in range(1, 5):
+                if i + entity_len < len(tokens) and tokens[i + entity_len] in entity_types:
+                    entity = " ".join(tokens[i:i + entity_len])
+                    entity_type = tokens[i + entity_len]
+                    result_parts.extend([entity, entity_type])
+                    i += entity_len + 1
+                    break
+            else:
+                i += 1
+        
+        return " <sep> ".join(result_parts) if result_parts else prediction
     
     def e2s_forward(self, entity_sequences: List[str], batch_size: int = 8) -> List[str]:
         """Entity-to-Sentence forward pass with batching"""
@@ -349,18 +379,20 @@ class CycleNER:
         return loss.item()
     
     def cycle_training_step(self, sentences: List[str], entity_sequences: List[str]):
-        """Perform one cycle training step"""
+        """Perform one cycle training step with format enforcement"""
         
-        # Use smaller inference batch size for memory efficiency
         inference_batch_size = 4
         
         # S-cycle: S -> S2E -> E2S -> S'
-        synthetic_entity_seqs = self.s2e_forward(sentences, batch_size=inference_batch_size)  # S2E(S) -> Q'
-        s_cycle_loss = self.train_e2s(synthetic_entity_seqs, sentences)  # Train E2S with (Q', S)
+        synthetic_entity_seqs = self.s2e_forward(sentences, batch_size=inference_batch_size)
         
-        # E-cycle: Q -> E2S -> S2E -> Q'
-        synthetic_sentences = self.e2s_forward(entity_sequences, batch_size=inference_batch_size)  # E2S(Q) -> S'
-        e_cycle_loss = self.train_s2e(synthetic_sentences, entity_sequences)  # Train S2E with (S', Q)
+        # Ensure synthetic sequences use <sep> format before training E2S
+        formatted_synthetic_seqs = [self._enforce_sep_format(seq) for seq in synthetic_entity_seqs]
+        s_cycle_loss = self.train_e2s(formatted_synthetic_seqs, sentences)
+        
+        # E-cycle: Q -> E2S -> S2E -> Q'  
+        synthetic_sentences = self.e2s_forward(entity_sequences, batch_size=inference_batch_size)
+        e_cycle_loss = self.train_s2e(synthetic_sentences, entity_sequences)
         
         return s_cycle_loss, e_cycle_loss
     
@@ -446,14 +478,13 @@ class CycleNER:
         self.training_history = checkpoint.get('training_history', [])
         
         # Initialize models with correct vocab size
-        self.s2e_model = EncoderDecoderModel.from_encoder_decoder_pretrained(
-        model_name, model_name).to(self.device)
-        self.e2s_model = EncoderDecoderModel.from_encoder_decoder_pretrained(
-            model_name, model_name).to(self.device)
-        self.s2e_model.encoder.resize_token_embeddings(len(self.tokenizer))
-        self.s2e_model.decoder.resize_token_embeddings(len(self.tokenizer))
-        self.e2s_model.encoder.resize_token_embeddings(len(self.tokenizer))
-        self.e2s_model.decoder.resize_token_embeddings(len(self.tokenizer))
+        from transformers import BartForConditionalGeneration
+        self.s2e_model = BartForConditionalGeneration.from_pretrained(model_name).to(self.device)
+        self.e2s_model = BartForConditionalGeneration.from_pretrained(model_name).to(self.device)
+        
+        # Resize embeddings for new tokens
+        self.s2e_model.resize_token_embeddings(len(self.tokenizer))
+        self.e2s_model.resize_token_embeddings(len(self.tokenizer))
         
         # Load model states
         self.s2e_model.load_state_dict(checkpoint['s2e_model_state'])
