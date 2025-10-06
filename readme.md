@@ -5,6 +5,8 @@
 1. Install dependencies:
 ```bash
 pip install torch transformers scikit-learn numpy tqdm
+#and
+pip install graphviz streamlit langraph langraph-groq
 ```
 
 2. Train the model:
