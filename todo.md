@@ -12,6 +12,6 @@
 
 - Improved the model performance by increasing the no of epochs
 
-# Pending
-
 - improve the app for these for vis
+
+# Pending
