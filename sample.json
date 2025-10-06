@@ -201,17 +201,17 @@
     "type": "hydrothermal"
   },
   {
-    "doi": "10.1021/test.2024.002",
-    "paragraph_string": "Silver nanoparticles were prepared by chemical reduction method. AgNO3 solution (0.01 M) was prepared by dissolving silver nitrate in 100 mL distilled water. Sodium borohydride (0.1 M) was used as reducing agent and added slowly to the silver solution while maintaining the temperature at 0°C for 2 hours. The resulting colloidal solution was centrifuged at 5000 rpm and the silver nanoparticles were collected.",
+    "doi": "10.1016/j.test.2024.003",
+    "paragraph_string": "TiO2 nanoparticles were prepared via sol-gel method. 10 mL of titanium isopropoxide was added to 80 mL of ethanol under vigorous stirring at room temperature. Then, 2 mL of acetic acid was introduced as a stabilizing agent. The mixture was stirred continuously for 45 minutes, followed by aging at 60°C for 12 hours. The resulting gel was calcined at 450°C for 3 hours to obtain crystalline TiO2.",
     "reaction": {
-      "left_side": ["AgNO3", "NaBH4"],
-      "right_side": ["Ag"]
+      "left_side": ["Ti(OCH(CH3)2)4", "CH3COOH"],
+      "right_side": ["TiO2"]
     },
-    "reaction_string": "AgNO3 + NaBH4 -> Ag",
+    "reaction_string": "Ti(OCH(CH3)2)4 + CH3COOH -> TiO2",
     "target": {
-      "material_string": "Ag",
-      "material_name": "silver",
-      "material_formula": "Ag",
+      "material_string": "TiO2",
+      "material_name": "titanium dioxide",
+      "material_formula": "TiO2",
       "phase": "nanoparticles",
       "additives": [],
       "oxygen_deficiency": null,
@@ -220,24 +220,26 @@
       "elements_vars": {},
       "composition": [
         {
-          "formula": "Ag",
+          "formula": "TiO2",
           "amount": "1",
           "elements": {
-            "Ag": "1"
+            "Ti": "1",
+            "O": "2"
           },
           "species": {
-            "Ag": "1"
+            "Ti": "1",
+            "O": "2"
           }
         }
       ],
-      "mp_id": "mp-124"
+      "mp_id": "mp-2657"
     },
-    "targets_string": "Ag",
+    "targets_string": "TiO2",
     "precursors": [
       {
-        "material_string": "AgNO3",
-        "material_name": "silver nitrate",
-        "material_formula": "AgNO3",
+        "material_string": "Ti(OCH(CH3)2)4",
+        "material_name": "titanium isopropoxide",
+        "material_formula": "Ti(OCH(CH3)2)4",
         "phase": "",
         "additives": [],
         "oxygen_deficiency": null,
@@ -246,25 +248,26 @@
         "elements_vars": {},
         "composition": [
           {
-            "formula": "AgNO3",
+            "formula": "Ti(OCH(CH3)2)4",
             "amount": "1",
             "elements": {
-              "Ag": "1",
-              "N": "1",
-              "O": "3"
+              "Ti": "1",
+              "O": "4",
+              "C": "12",
+              "H": "28"
             },
             "species": {
-              "Ag": "1",
-              "NO3": "1"
+              "Ti": "1",
+              "OCH(CH3)2": "4"
             }
           }
         ],
-        "mp_id": "mp-8887"
+        "mp_id": null
       },
       {
-        "material_string": "NaBH4",
-        "material_name": "sodium borohydride",
-        "material_formula": "NaBH4",
+        "material_string": "CH3COOH",
+        "material_name": "acetic acid",
+        "material_formula": "CH3COOH",
         "phase": "",
         "additives": [],
         "oxygen_deficiency": null,
@@ -273,86 +276,116 @@
         "elements_vars": {},
         "composition": [
           {
-            "formula": "NaBH4",
+            "formula": "CH3COOH",
             "amount": "1",
             "elements": {
-              "Na": "1",
-              "B": "1",
-              "H": "4"
+              "C": "2",
+              "H": "4",
+              "O": "2"
             },
             "species": {
-              "Na": "1",
-              "BH4": "1"
+              "CH3COOH": "1"
             }
           }
         ],
-        "mp_id": "mp-23870"
+        "mp_id": null
       }
     ],
-    "solvents_string": ["water"],
+    "solvents_string": ["ethanol"],
     "operations": [
       {
         "type": "MixingOperation",
         "conditions": {
           "temperature": {
-            "values": [0.0],
+            "values": [25.0],
             "units": "°C",
-            "min_value": 0.0,
-            "max_value": 0.0
+            "min_value": 25.0,
+            "max_value": 25.0
           },
           "time": {
-            "values": [2.0],
+            "values": [45.0],
+            "units": "min",
+            "min_value": 45.0,
+            "max_value": 45.0
+          },
+          "atmosphere": null,
+          "mixing_device": null,
+          "mixing_media": ["ethanol"]
+        },
+        "string": "stirring"
+      },
+      {
+        "type": "AgingOperation",
+        "conditions": {
+          "temperature": {
+            "values": [60.0],
+            "units": "°C",
+            "min_value": 60.0,
+            "max_value": 60.0
+          },
+          "time": {
+            "values": [12.0],
             "units": "h",
-            "min_value": 2.0,
-            "max_value": 2.0
+            "min_value": 12.0,
+            "max_value": 12.0
           },
           "atmosphere": null,
           "mixing_device": null,
           "mixing_media": null
         },
-        "string": "added"
+        "string": "aging"
       },
       {
-        "type": "PurificationOperation",
+        "type": "CalcinationOperation",
         "conditions": {
-          "temperature": null,
-          "time": null,
+          "temperature": {
+            "values": [450.0],
+            "units": "°C",
+            "min_value": 450.0,
+            "max_value": 450.0
+          },
+          "time": {
+            "values": [3.0],
+            "units": "h",
+            "min_value": 3.0,
+            "max_value": 3.0
+          },
           "atmosphere": null,
-          "mixing_device": "centrifuge",
+          "mixing_device": null,
           "mixing_media": null
         },
-        "string": "centrifuged"
+        "string": "calcined"
       }
     ],
     "quantities": [
       {
-        "material": "AgNO3",
+        "material": "Ti(OCH(CH3)2)4",
         "quantity": [
           {
-            "number": 0.01,
-            "unit": "M"
+            "number": 10.0,
+            "unit": "mL"
           }
         ]
       },
       {
-        "material": "NaBH4",
+        "material": "CH3COOH",
         "quantity": [
           {
-            "number": 0.1,
-            "unit": "M"
+            "number": 2.0,
+            "unit": "mL"
           }
         ]
       },
       {
-        "material": "water",
+        "material": "ethanol",
         "quantity": [
           {
-            "number": 100.0,
+            "number": 80.0,
             "unit": "mL"
           }
         ]
       }
     ],
-    "type": "reduction"
+    "type": "sol-gel"
   }
 ]
