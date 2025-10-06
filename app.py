@@ -3,7 +3,7 @@ import json
 import torch
 import pandas as pd
 import os
-from transformers import AutoTokenizer, BartForConditionalGeneration
+from transformers import AutoTokenizer, BartForConditionalGeneration, T5ForConditionalGeneration
 import torch.optim as optim
 from typing import List, Dict, Tuple
 import tempfile
@@ -11,7 +11,6 @@ import tempfile
 # Set page config
 st.set_page_config(
     page_title="Materials Science NER",
-    page_icon="",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -85,11 +84,12 @@ class MaterialsDataProcessor:
         return unique_entities
 
 class CycleNER:
-    def __init__(self, model_name="facebook/bart-base", device=None):
+    def __init__(self, model_name="facebook/bart-base", model_type="bart", device=None):
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
         
         self.device = device
+        self.model_type = model_type.lower()
         
         # Load tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -101,8 +101,13 @@ class CycleNER:
         special_tokens = {"additional_special_tokens": ["<sep>"]}
         self.tokenizer.add_special_tokens(special_tokens)
         
-        # Initialize models
-        self.s2e_model = BartForConditionalGeneration.from_pretrained(model_name).to(device)
+        # Initialize model based on type
+        if self.model_type == "bart":
+            self.s2e_model = BartForConditionalGeneration.from_pretrained(model_name).to(device)
+        elif self.model_type == "t5":
+            self.s2e_model = T5ForConditionalGeneration.from_pretrained(model_name).to(device)
+        else:
+            raise ValueError(f"Unsupported model type: {model_type}. Use 'bart' or 't5'")
         
         # Resize embeddings for new tokens
         self.s2e_model.resize_token_embeddings(len(self.tokenizer))
@@ -110,14 +115,19 @@ class CycleNER:
         # Configure model
         self.s2e_model.config.pad_token_id = self.tokenizer.pad_token_id
         self.s2e_model.config.eos_token_id = self.tokenizer.eos_token_id
-        self.s2e_model.config.bos_token_id = self.tokenizer.bos_token_id
-        self.s2e_model.config.decoder_start_token_id = self.tokenizer.bos_token_id
+        if hasattr(self.tokenizer, 'bos_token_id') and self.tokenizer.bos_token_id is not None:
+            self.s2e_model.config.bos_token_id = self.tokenizer.bos_token_id
+            self.s2e_model.config.decoder_start_token_id = self.tokenizer.bos_token_id
         
         # Initialize optimizer (needed for loading checkpoint)
         self.s2e_optimizer = optim.Adam(self.s2e_model.parameters(), lr=5e-5)
     
     def encode_batch(self, texts: List[str], max_length: int = 512):
         """Encode batch of texts"""
+        # Add task prefix for T5
+        if self.model_type == "t5":
+            texts = [f"extract entities: {text}" for text in texts]
+        
         encoded = self.tokenizer(
             texts,
             truncation=True,
@@ -148,8 +158,8 @@ class CycleNER:
                 outputs = self.s2e_model.generate(
                     **inputs,
                     max_length=256,
-                    num_beams=2,
-                    temperature=1.0,
+                    num_beams=4,
+                    temperature=0.7,
                     do_sample=False,
                     pad_token_id=self.tokenizer.pad_token_id,
                     eos_token_id=self.tokenizer.eos_token_id
@@ -159,11 +169,12 @@ class CycleNER:
             all_predictions.extend(batch_predictions)
             
             # Clear GPU cache after each batch
-            torch.cuda.empty_cache()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
         
         return all_predictions
     
-    def load_checkpoint(self, checkpoint_path: str, model_name: str = "facebook/bart-base"):
+    def load_checkpoint(self, checkpoint_path: str, model_name: str = None):
         """Load checkpoint"""
         if not os.path.exists(checkpoint_path):
             raise FileNotFoundError(f"No checkpoint found at {checkpoint_path}")
@@ -178,10 +189,10 @@ class CycleNER:
         print(f"Checkpoint loaded from {checkpoint_path}")
 
 @st.cache_resource
-def load_model(checkpoint_path):
+def load_model(checkpoint_path, model_name, model_type):
     """Load the trained model (cached)"""
     try:
-        cyclener = CycleNER()
+        cyclener = CycleNER(model_name=model_name, model_type=model_type)
         cyclener.load_checkpoint(checkpoint_path)
         cyclener.s2e_model.eval()
         return cyclener
@@ -205,10 +216,29 @@ def main():
     # Sidebar
     st.sidebar.title("Configuration")
     
-    # Model loading
+    # Model type selection
+    model_type = st.sidebar.selectbox(
+        "Model Type",
+        options=["BART", "T5"],
+        help="Select the model architecture"
+    )
+    
+    # Model name input
+    if model_type == "BART":
+        default_model = "facebook/bart-base"
+    else:
+        default_model = "t5-small"
+    
+    model_name = st.sidebar.text_input(
+        "Model Name",
+        value=default_model,
+        help="HuggingFace model name (e.g., facebook/bart-base or t5-small)"
+    )
+    
+    # Checkpoint path
     checkpoint_path = st.sidebar.text_input(
         "Checkpoint Path", 
-        value="C:\\Users\\rdeva\\Downloads\\sem5\\NERD-Redefined\\finalcheckpoint\\checkpoint.pt",
+        value="checkpoint",
         help="Path to your trained model checkpoint file"
     )
     
@@ -216,22 +246,25 @@ def main():
     if st.sidebar.button("Load Model"):
         if checkpoint_path and os.path.exists(checkpoint_path):
             with st.spinner("Loading model..."):
-                model = load_model(checkpoint_path)
+                model = load_model(checkpoint_path, model_name, model_type.lower())
             if model:
                 st.sidebar.success("✅ Model loaded successfully!")
                 st.session_state.model = model
+                st.session_state.model_type = model_type
             else:
                 st.sidebar.error("❌ Failed to load model")
         else:
             st.sidebar.error("❌ Checkpoint file not found")
+    
+    # Display model info if loaded
+    if 'model' in st.session_state:
+        st.sidebar.info(f"**Loaded Model:** {st.session_state.model_type}\n\n**Architecture:** {model_name}")
     
     # Main content
     col1, col2 = st.columns([1, 1])
     
     with col1:
         st.subheader("📁 Input Data")
-        
-        # Show expected JSON format
         
         # File upload
         uploaded_file = st.file_uploader(
@@ -245,7 +278,7 @@ def main():
         json_text = st.text_area(
             "JSON Data",
             height=200,
-            placeholder="Paste your JSON data here..."
+            placeholder='Paste your JSON data here...\n\nExample format:\n[\n  {\n    "paragraph_string": "Your text here...",\n    ...\n  }\n]'
         )
     
     with col2:
@@ -294,80 +327,86 @@ def main():
                     # Get predictions
                     predicted_sequences = model.s2e_forward(sentences)
                     
-                    # Parse entities
+                    # Parse entities - Create detailed results
                     all_results = []
                     
                     for i, (sentence, pred_seq) in enumerate(zip(sentences, predicted_sequences)):
                         entities = processor.parse_model_output(pred_seq)
                         
-                        # Add to results
-                        for entity, entity_type in entities:
+                        if entities:
+                            # Add each entity as a separate row
+                            for entity, entity_type in entities:
+                                all_results.append({
+                                    'Entity': entity,
+                                    'Entity_Type': entity_type
+                                })
+                        else:
+                            # Add a row even if no entities found
                             all_results.append({
-                                'Record_ID': i + 1,
-                                'Sentence': sentence[:100] + "..." if len(sentence) > 100 else sentence,
-                                'Entity': entity,
-                                'Entity_Type': entity_type,
-                                'Raw_Prediction': pred_seq
+                                'Entity': '',
+                                'Entity_Type': ''
                             })
                     
                     if all_results:
                         # Create DataFrame
                         df = pd.DataFrame(all_results)
                         
+                        # Count only non-empty entities
+                        non_empty_entities = df[df['Entity'] != '']
+                        
                         # Display results
-                        st.success(f"Extracted {len(all_results)} entities from {len(sentences)} sentences")
+                        st.success(f"✅ Extracted {len(non_empty_entities)} entities from {len(sentences)} sentences")
                         
                         # Show statistics
-                        entity_counts = df['Entity_Type'].value_counts()
-                        st.markdown("**Entity Type Distribution:**")
-                        for entity_type, count in entity_counts.items():
-                            st.write(f"- **{entity_type}**: {count} entities")
+                        if len(non_empty_entities) > 0:
+                            entity_counts = non_empty_entities['Entity_Type'].value_counts()
+                            st.markdown("**📊 Entity Type Distribution:**")
+                            col_stat1, col_stat2 = st.columns(2)
+                            
+                            with col_stat1:
+                                for entity_type, count in list(entity_counts.items())[:4]:
+                                    st.metric(entity_type, count)
+                            
+                            with col_stat2:
+                                for entity_type, count in list(entity_counts.items())[4:]:
+                                    st.metric(entity_type, count)
                         
                         # Display dataframe
-                        st.subheader("Extracted Entities")
-                        st.dataframe(df, use_container_width=True)
+                        st.subheader("📋 Extracted Entities")
+                        st.dataframe(df, use_container_width=True, height=400)
                         
                         # Download button
                         csv = df.to_csv(index=False)
                         st.download_button(
-                            label="Download CSV",
+                            label="⬇️ Download CSV",
                             data=csv,
                             file_name="extracted_entities.csv",
-                            mime="text/csv"
+                            mime="text/csv",
+                            type="primary"
                         )
                         
                         # Show sample predictions
-                        st.subheader("Sample Predictions")
+                        st.subheader("🔍 Sample Predictions")
                         for i in range(min(3, len(sentences))):
                             with st.expander(f"Sample {i+1}"):
-                                st.write(f"**Sentence:** {sentences[i][:200]}...")
-                                st.write(f"**Raw Prediction:** {predicted_sequences[i]}")
+                                st.write(f"**Sentence:** {sentences[i][:300]}{'...' if len(sentences[i]) > 300 else ''}")
+                                st.write(f"**Raw Prediction:** `{predicted_sequences[i]}`")
                                 
                                 sample_entities = processor.parse_model_output(predicted_sequences[i])
                                 if sample_entities:
                                     st.write("**Parsed Entities:**")
                                     for entity, etype in sample_entities:
-                                        st.write(f"- **{entity}** → {etype}")
+                                        st.write(f"- **{entity}** → `{etype}`")
                                 else:
-                                    st.write("No entities extracted")
+                                    st.write("*No entities extracted*")
                     
                     else:
                         st.warning("⚠️ No entities were extracted from the input data")
                 
                 except Exception as e:
                     st.error(f"❌ Error during processing: {str(e)}")
-    
-    # Footer
-    st.markdown("---")
-    st.markdown(
-        """
-        **About:** This app uses a trained CycleNER model for Named Entity Recognition in materials science literature.
-        
-        **Entity Types:** PRECURSOR, TARGET, SOLVENT, TEMPERATURE, TIME, OPERATION, QUANTITY
-        
-        **Model Architecture:** BART-based sequence-to-sequence model with cycle-consistency training
-        """
-    )
+                    import traceback
+                    st.code(traceback.format_exc())
 
 if __name__ == "__main__":
     main()
